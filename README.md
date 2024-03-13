@@ -1,7 +1,14 @@
 # Python RC522 library
 pi-rc522 consists of two Python classes for controlling an SPI RFID module "RC522" using Raspberry Pi or Beaglebone Black. You can get this module on AliExpress or Ebay for $3.
 
-Based on [MFRC522-python](https://github.com/mxgxw/MFRC522-python/blob/master/README.md).
+**This fork** makes the library compatible with recent kernels (current Raspberry Pi OS based on Debian bookworm).
+The original library uses RPi.GPIO, [which has not been updated to work with /sys/class/gpio-less kernels yet](https://sourceforge.net/p/raspberry-gpio-python/tickets/210/).
+The fork uses gpiozero, which works properly.
+This fork therefore fixes the `RuntimeError: Failed to add edge detection` crash when using the IRQ pin.
+
+Based on [lmurach's pi-rc522](https://github.com/lmurach/pi-rc522),
+which is based on [MFRC522-python](https://github.com/mxgxw/MFRC522-python/blob/master/README.md).
+
 
 Install using pip:
 ```

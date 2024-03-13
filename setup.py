@@ -15,7 +15,7 @@ def get_version():
 
 
 setup(
-    name='pi-rc522',
+    name='pi-rc522-gpiozero',
     packages=find_packages(),
     include_package_data=True,
     version=get_version(),
@@ -32,7 +32,7 @@ setup(
     ],
     author='ondryaso',
     author_email='ondryaso@ondryaso.eu',
-    url='https://github.com/kevinvalk/pi-rc522',
+    url='https://github.com/hoffie/pi-rc522-gpiozero',
     license='MIT',
-    install_requires=['spidev', 'RPi.GPIO'],
+    install_requires=['spidev', 'gpiozero'],
 )
