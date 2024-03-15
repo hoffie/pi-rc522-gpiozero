@@ -1,29 +1,28 @@
 import logging
 import threading
 import time
+import spidev
+import gpiozero
 
 logger = logging.getLogger(__name__)
 
 RASPBERRY = object()
 BEAGLEBONE = object()
 board = RASPBERRY
+PIN_MODES_BOARD = ['BOARD', 'BOARD_DEFAULT']
+PIN_MODES_BCM = ['BCM']
 try:
-    # Try with Raspberry PI imports first
-    import spidev
-    import RPi.GPIO as GPIO
-    SPIClass = spidev.SpiDev
-    def_pin_rst = 22
-    def_pin_irq = 18
-    def_pin_mode = GPIO.BOARD
+    import RPi.GPIO as GPIO  # only for pin mode selection compatibility
+    PIN_MODES_BOARD.append(GPIO.BOARD)
+    PIN_MODES_BCM.append(GPIO.BCM)
 except ImportError:
-    # If they failed, try with Beaglebone
-    import Adafruit_BBIO.SPI as SPI
-    import Adafruit_BBIO.GPIO as GPIO
-    SPIClass = SPI.SPI
-    board = BEAGLEBONE
-    def_pin_rst = "P9_23"
-    def_pin_irq = "P9_15"
-    def_pin_mode = None
+    pass
+
+SPIClass = spidev.SpiDev
+def_pin_rst = 22
+def_pin_irq = 18
+def_pin_mode = 'BOARD_DEFAULT'
+
 
 class RFID(object):
     pin_rst = 22
@@ -76,9 +75,18 @@ class RFID(object):
     authed = False
     irq = threading.Event()
 
-    def __init__(self, bus=0, device=0, speed=1000000, pin_rst=def_pin_rst,
-            pin_ce=0, pin_irq=def_pin_irq, pin_mode=def_pin_mode,
-            antenna_gain=None):
+    def __init__(self, bus=0, device=0, speed=1000000, pin_rst=None,
+                 pin_ce=0, pin_irq=None, pin_mode=def_pin_mode,
+                 antenna_gain=None):
+        if not pin_rst:
+            # As this code may now run on non-Raspberry devices, ask for
+            # explicit PIN definitions to avoid hardware damage.
+            raise RuntimeError('no RST GPIO defined, please pass pin_rst= '
+                               '(previous default: {def_pin_rst})')
+        if not pin_irq:
+            logger.info('No IRQ GPIO defined (previous default: '
+                        '{def_pin_irq}), wait_for_tag() not supported')
+
         self.pin_rst = pin_rst
         self.pin_ce = pin_ce
         self.pin_irq = pin_irq
@@ -92,24 +100,28 @@ class RFID(object):
             self.spi.msh = speed
 
         if pin_mode is not None:
-            GPIO.setmode(pin_mode)
+            if pin_mode in PIN_MODES_BOARD:
+                self.pin = lambda p: f'BOARD{p}'
+            elif pin_mode in PIN_MODES_BCM:
+                self.pin = lambda p: f'BCM{p}'
+            else:
+                raise RuntimeError("unsupported pin mode")
         if pin_rst != 0:
-            GPIO.setup(pin_rst, GPIO.OUT)
-            GPIO.output(pin_rst, 1)
+            self.output_rst = gpiozero.OutputDevice(self.pin(pin_rst))
+            self.output_rst.on()
 
         # Ignore IRQ if we did not wire this
         if self.pin_irq is not None:
-            GPIO.setup(pin_irq, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-            GPIO.add_event_detect(pin_irq, GPIO.FALLING,
-                    callback=self.irq_callback)
+            self.input_irq = gpiozero.DigitalInputDevice(self.pin(pin_irq), pull_up=True)
+            self.input_irq.when_deactivated = self.irq_callback
 
         # Change the antenna gain
         if antenna_gain is not None:
             self.antenna_gain = antenna_gain
 
         if pin_ce != 0:
-            GPIO.setup(pin_ce, GPIO.OUT)
-            GPIO.output(pin_ce, 1)
+            self.output_ce = gpiozero.OutputDevice(self.pin(pin_ce))
+            self.output_ce.on()
         self.init()
 
     def init(self):
@@ -125,10 +137,10 @@ class RFID(object):
 
     def spi_transfer(self, data):
         if self.pin_ce != 0:
-            GPIO.output(self.pin_ce, 0)
+            self.output_ce.off()
         r = self.spi.xfer2(data)
         if self.pin_ce != 0:
-            GPIO.output(self.pin_ce, 1)
+            self.output_ce.on()
         return r
 
     def dev_write(self, address, value):
@@ -477,7 +489,8 @@ class RFID(object):
 
         return error
 
-    def irq_callback(self, not_used=None):
+    def irq_callback(self):
+        logger.debug("irq_callback")
         self.irq.set()
 
     def wait_for_tag(self, timeout=0):
@@ -510,11 +523,10 @@ class RFID(object):
 
     def cleanup(self):
         """
-        Calls stop_crypto() if needed and cleanups GPIO.
+        Calls stop_crypto() if needed
         """
         if self.authed:
             self.stop_crypto()
-        GPIO.cleanup()
 
     def util(self):
         """

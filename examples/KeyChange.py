@@ -5,8 +5,10 @@ import time
 
 from pirc522 import RFID
 
+PIN_RST = PLEASE_DEFINE_ME  # e.g. 22
+
 run = True
-rdr = RFID()
+rdr = RFID(pin_mode='BOARD', pin_rst=PIN_RST)
 util = rdr.util()
 util.debug = True
 

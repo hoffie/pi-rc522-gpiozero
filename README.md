@@ -21,7 +21,7 @@ git clone https://github.com/ondryaso/pi-rc522.git
 cd pi-rc522
 python setup.py install
 ```
-You'll also need to install the [**spidev**](https://pypi.python.org/pypi/spidev) and [**RPi.GPIO**](https://pypi.python.org/pypi/RPi.GPIO) libraries on Raspberry PI, and [**Adafruit_BBIO**](https://github.com/adafruit/adafruit-beaglebone-io-python) on Beaglebone Black (which should be installed by default).
+You'll also need to install the gpiozero, [**spidev**](https://pypi.python.org/pypi/spidev) and [**RPi.GPIO**](https://pypi.python.org/pypi/RPi.GPIO) libraries on Raspberry PI.  Beaglebone Black is untested in this fork (might work via gpiozero?).
 
 [MIFARE datasheet](https://www.nxp.com/docs/en/data-sheet/MF1S50YYX_V1.pdf) can be useful.
 
@@ -86,7 +86,7 @@ try:
             rdr.stop_crypto()
 
 except KeyboardInterrupt:
-  # Calls GPIO cleanup
+  # Graceful shutdown
   rdr.cleanup()
 ```
 
@@ -102,7 +102,7 @@ while True:
   if uid is not None:
     print(f'UID: {uid:X}')
 
-# Calls GPIO cleanup
+# Graceful shutdown
 reader.cleanup()
 ```
 
