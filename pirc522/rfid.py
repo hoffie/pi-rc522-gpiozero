@@ -148,8 +148,15 @@ class RFID(object):
             self.output_ce.on()
         self.init()
 
+    def disable_interrupts(self):
+        self.dev_write(self.addr_ComIrqReq, 0x14)
+        self.dev_write(self.addr_ComIEnReg, 0x80)
+        self.dev_write(self.addr_DivIEnReg, 0x00)
+        self.dev_write(self.addr_DivIrqReg, 0x00)
+
     def init(self):
         self.reset()
+        self.disable_interrupts()
         self.dev_write(self.addr_TModeReg, 0x8D)
         self.dev_write(self.addr_TPrescalerReg, 0x3E)
         self.dev_write(self.addr_TReloadReg2D, 30)
@@ -300,6 +307,8 @@ class RFID(object):
         error, uid2 = self.anticoll2()
         if error:
             return None
+
+        self.disable_interrupts()
 
         # Build the final UID without checksums
         real_uid = uid[1:-1] + uid2[:-1]
@@ -521,6 +530,7 @@ class RFID(object):
     def wait_for_tag(self, timeout=0):
         if self.pin_irq is None:
             raise NotImplementedError('Waiting not implemented if IRQ is not used')
+        logger.debug(f'wait_for_tag(timeout={timeout})')
         # enable IRQ on detect
         self.init()
         self.irq.clear()
@@ -531,7 +541,6 @@ class RFID(object):
         waiting = True
         while waiting and (timeout == 0 or ((time.time() - start_time) < timeout)):
             self.init()
-            #self.irq.clear()
             self.dev_write(self.addr_ComIrqReq, 0x00)
             self.dev_write(self.addr_ComIEnReg, 0xA0)
 
