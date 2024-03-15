@@ -29,6 +29,31 @@ class RFID(object):
     pin_ce = 0
     pin_irq = 18
 
+    addr_CommandReg = 0x01
+    addr_ComIEnReg = 0x02
+    addr_DivIEnReg = 0x03
+    addr_ComIrqReq = 0x04
+    addr_DivIrqReg = 0x05
+    addr_ErrorReg = 0x06
+    addr_Status2Reg = 0x08
+    addr_FIFODataReg = 0x09
+    addr_FIFOLevelReg = 0x0A
+    addr_ControlReg = 0x0C
+    addr_BitFramingReg = 0x0D
+    addr_ModeReg = 0x11
+    addr_TxControlReg = 0x14
+    addr_TxASKReg = 0x15
+    addr_RFCfgReg = 0x26
+    addr_TModeReg = 0x2A
+    addr_TPrescalerReg = 0x2B
+    addr_TReloadReg2C = 0x2C
+    addr_TReloadReg2D = 0x2D
+    addr_CRCResultReg21 = 0x21
+    addr_CRCResultReg22 = 0x22
+
+    bit_Tx1RFEn = 1 << 0
+    bit_Tx2RFEn = 1 << 1
+
     mode_idle = 0x00
     mode_auth = 0x0E
     mode_receive = 0x08
@@ -55,7 +80,6 @@ class RFID(object):
     act_select = 0x93
     act_end = 0x50
 
-    reg_tx_control = 0x14
     length = 16
 
     antenna_gain = 0x04
@@ -126,12 +150,12 @@ class RFID(object):
 
     def init(self):
         self.reset()
-        self.dev_write(0x2A, 0x8D)
-        self.dev_write(0x2B, 0x3E)
-        self.dev_write(0x2D, 30)
-        self.dev_write(0x2C, 0)
-        self.dev_write(0x15, 0x40)
-        self.dev_write(0x11, 0x3D)
+        self.dev_write(self.addr_TModeReg, 0x8D)
+        self.dev_write(self.addr_TPrescalerReg, 0x3E)
+        self.dev_write(self.addr_TReloadReg2D, 30)
+        self.dev_write(self.addr_TReloadReg2C, 0)
+        self.dev_write(self.addr_TxASKReg, 0x40)
+        self.dev_write(self.addr_ModeReg, 0x3D)
         self.set_antenna_gain(self.antenna_gain)
         self.set_antenna(True)
 
@@ -158,12 +182,13 @@ class RFID(object):
         self.dev_write(address, current & (~mask))
 
     def set_antenna(self, state):
+        val = self.bit_Tx1RFEn | self.bit_Tx2RFEn
         if state == True:
-            current = self.dev_read(self.reg_tx_control)
-            if ~(current & 0x03):
-                self.set_bitmask(self.reg_tx_control, 0x03)
+            current = self.dev_read(self.addr_TxControlReg)
+            if ~(current & val):
+                self.set_bitmask(self.addr_TxControlReg, val)
         else:
-            self.clear_bitmask(self.reg_tx_control, 0x03)
+            self.clear_bitmask(self.addr_TxControlReg, val)
 
     def set_antenna_gain(self, gain):
         """
@@ -171,7 +196,7 @@ class RFID(object):
         """
         if 0 <= gain <= 7:
             self.antenna_gain = gain
-            self.dev_write(0x26, (self.antenna_gain<<4))
+            self.dev_write(self.addr_RFCfgReg, (self.antenna_gain<<4))
         else:
             raise ValueError('Antenna gain has to be in the range 0...7')
 
@@ -191,30 +216,30 @@ class RFID(object):
             irq = 0x77
             irq_wait = 0x30
 
-        self.dev_write(0x02, irq | 0x80)
-        self.clear_bitmask(0x04, 0x80)
-        self.set_bitmask(0x0A, 0x80)
-        self.dev_write(0x01, self.mode_idle)
+        self.dev_write(self.addr_ComIEnReg, irq | 0x80)
+        self.clear_bitmask(self.addr_ComIrqReq, 0x80)
+        self.set_bitmask(self.addr_FIFOLevelReg, 0x80)
+        self.dev_write(self.addr_CommandReg, self.mode_idle)
 
         for i in range(len(data)):
-            self.dev_write(0x09, data[i])
+            self.dev_write(self.addr_FIFODataReg, data[i])
 
-        self.dev_write(0x01, command)
+        self.dev_write(self.addr_CommandReg, command)
 
         if command == self.mode_transrec:
-            self.set_bitmask(0x0D, 0x80)
+            self.set_bitmask(self.addr_BitFramingReg, 0x80)
 
         i = 2000
         while True:
-            n = self.dev_read(0x04)
+            n = self.dev_read(self.addr_ComIrqReq)
             i -= 1
             if ~((i != 0) and ~(n & 0x01) and ~(n & irq_wait)):
                 break
 
-        self.clear_bitmask(0x0D, 0x80)
+        self.clear_bitmask(self.addr_BitFramingReg, 0x80)
 
         if i != 0:
-            if (self.dev_read(0x06) & 0x1B) == 0x00:
+            if (self.dev_read(self.addr_ErrorReg) & 0x1B) == 0x00:
                 error = False
 
                 if n & irq & 0x01:
@@ -222,8 +247,8 @@ class RFID(object):
                     error = True
 
                 if command == self.mode_transrec:
-                    n = self.dev_read(0x0A)
-                    last_bits = self.dev_read(0x0C) & 0x07
+                    n = self.dev_read(self.addr_FIFOLevelReg)
+                    last_bits = self.dev_read(self.addr_ControlReg) & 0x07
                     if last_bits != 0:
                         back_length = (n - 1) * 8 + last_bits
                     else:
@@ -236,7 +261,7 @@ class RFID(object):
                         n = self.length
 
                     for i in range(n):
-                        back_data.append(self.dev_read(0x09))
+                        back_data.append(self.dev_read(self.addr_FIFODataReg))
             else:
                 logger.warning("Error E2")
                 error = True
@@ -288,7 +313,7 @@ class RFID(object):
         error = True
         back_bits = 0
 
-        self.dev_write(0x0D, 0x07)
+        self.dev_write(self.addr_BitFramingReg, 0x07)
         (error, back_data, back_bits) = self.card_write(self.mode_transrec, [req_mode, ])
 
         if error or (back_bits != 0x10):
@@ -306,7 +331,7 @@ class RFID(object):
 
         serial_number_check = 0
 
-        self.dev_write(0x0D, 0x00)
+        self.dev_write(self.addr_BitFramingReg, 0x00)
         serial_number.append(self.act_anticl)
         serial_number.append(0x20)
 
@@ -333,7 +358,7 @@ class RFID(object):
 
         serial_number_check = 0
 
-        self.dev_write(0x0D, 0x00)
+        self.dev_write(self.addr_BitFramingReg, 0x00)
         serial_number.append(self.act_anticl2)
         serial_number.append(0x20)
 
@@ -351,23 +376,23 @@ class RFID(object):
         return (error, back_data)
 
     def calculate_crc(self, data):
-        self.clear_bitmask(0x05, 0x04)
-        self.set_bitmask(0x0A, 0x80)
+        self.clear_bitmask(self.addr_DivIrqReg, 0x04)
+        self.set_bitmask(self.addr_FIFOLevelReg, 0x80)
 
         for i in range(len(data)):
-            self.dev_write(0x09, data[i])
-        self.dev_write(0x01, self.mode_crc)
+            self.dev_write(self.addr_FIFODataReg, data[i])
+        self.dev_write(self.addr_CommandReg, self.mode_crc)
 
         i = 255
         while True:
-            n = self.dev_read(0x05)
+            n = self.dev_read(self.addr_DivIrqReg)
             i -= 1
             if not ((i != 0) and not (n & 0x04)):
                 break
 
         ret_data = []
-        ret_data.append(self.dev_read(0x22))
-        ret_data.append(self.dev_read(0x21))
+        ret_data.append(self.dev_read(self.addr_CRCResultReg22))
+        ret_data.append(self.dev_read(self.addr_CRCResultReg21))
 
         return ret_data
 
@@ -416,7 +441,7 @@ class RFID(object):
             buf.append(uid[i])
 
         (error, back_data, back_length) = self.card_write(self.mode_auth, buf)
-        if not (self.dev_read(0x08) & 0x08) != 0:
+        if not (self.dev_read(self.addr_Status2Reg) & 0x08) != 0:
             error = True
 
         if not error:
@@ -426,7 +451,7 @@ class RFID(object):
 
     def stop_crypto(self):
         """Ends operations with Crypto1 usage."""
-        self.clear_bitmask(0x08, 0x08)
+        self.clear_bitmask(self.addr_Status2Reg, 0x08)
         self.authed = False
 
     def halt(self):
@@ -437,9 +462,9 @@ class RFID(object):
         buf.append(0)
 
         crc = self.calculate_crc(buf)
-        self.clear_bitmask(0x08, 0x80)
+        self.clear_bitmask(self.addr_Status2Reg, 0x80)
         self.card_write(self.mode_transrec, buf)
-        self.clear_bitmask(0x08, 0x08)
+        self.clear_bitmask(self.addr_Status2Reg, 0x08)
         self.authed = False
 
     def read(self, block_address):
@@ -499,27 +524,29 @@ class RFID(object):
         # enable IRQ on detect
         self.init()
         self.irq.clear()
-        self.dev_write(0x04, 0x00)
-        self.dev_write(0x02, 0xA0)
+        self.dev_write(self.addr_ComIrqReq, 0x00)
+        self.dev_write(self.addr_ComIEnReg, 0xA0)
         # wait for it
         start_time = time.time()
         waiting = True
         while waiting and (timeout == 0 or ((time.time() - start_time) < timeout)):
             self.init()
             #self.irq.clear()
-            self.dev_write(0x04, 0x00)
-            self.dev_write(0x02, 0xA0)
+            self.dev_write(self.addr_ComIrqReq, 0x00)
+            self.dev_write(self.addr_ComIEnReg, 0xA0)
 
-            self.dev_write(0x09, 0x26)
-            self.dev_write(0x01, 0x0C)
-            self.dev_write(0x0D, 0x87)
+            # Even when using the interrupt line this is needed
+            # to force the controller to re-scan regularly:
+            self.dev_write(self.addr_FIFODataReg, 0x26)
+            self.dev_write(self.addr_CommandReg, 0x0C)
+            self.dev_write(self.addr_BitFramingReg, 0x87)
             waiting = not self.irq.wait(0.1)
         self.irq.clear()
         self.init()
 
     def reset(self):
         authed = False
-        self.dev_write(0x01, self.mode_reset)
+        self.dev_write(self.addr_CommandReg, self.mode_reset)
 
     def cleanup(self):
         """
